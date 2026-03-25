@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.taskmag.server.trade.order.mapper.TradeOrderMapper">
+
+    <select id="selectPage" resultType="com.taskmag.server.trade.order.vo.OrderDetailVO">
+        SELECT id, order_no AS orderNo, customer_name AS customerName, price, remark, address, status, create_time AS createTime
+        FROM trade_order
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (order_no LIKE CONCAT('%', #{keyword}, '%') OR customer_name LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+        ORDER BY create_time DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="count" resultType="java.lang.Long">
+        SELECT COUNT(1)
+        FROM trade_order
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (order_no LIKE CONCAT('%', #{keyword}, '%') OR customer_name LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+    </select>
+
+    <select id="selectById" resultType="com.taskmag.server.trade.order.vo.OrderDetailVO">
+        SELECT id, order_no AS orderNo, customer_name AS customerName, price, remark, address, status, create_time AS createTime
+        FROM trade_order
+        WHERE id = #{id}
+    </select>
+
+    <update id="updateRemark">
+        UPDATE trade_order SET remark = #{remark} WHERE id = #{id}
+    </update>
+
+    <update id="updatePrice">
+        UPDATE trade_order SET price = #{price} WHERE id = #{id}
+    </update>
+
+    <update id="updateAddress">
+        UPDATE trade_order SET address = #{address} WHERE id = #{id}
+    </update>
+</mapper>
