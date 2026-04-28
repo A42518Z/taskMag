@@ -20,6 +20,7 @@
     <properties>
         <java.version>17</java.version>
         <mybatis.boot.version>3.0.3</mybatis.boot.version>
+        
         <hutool.version>5.8.31</hutool.version>
         <mysql.version>8.4.0</mysql.version>
         <maven.compiler.plugin.version>3.11.0</maven.compiler.plugin.version>
