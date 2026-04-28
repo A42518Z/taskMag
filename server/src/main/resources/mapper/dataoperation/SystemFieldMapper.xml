@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.taskmag.server.dataoperation.mapper.SystemFieldMapper">
+
+    <select id="findTableMeta" resultType="java.util.LinkedHashMap">
+        SELECT t.rowid AS rowid,
+               t.tblname AS tblname,
+               t.lingma_sys_ent AS lingmaSysEnt,
+               t.hasDefaultFields AS hasDefaultFields
+        FROM _base_tbllist t
+        LEFT JOIN _base_dbinfo d
+          ON d.Id = t.dbid
+         AND d.lingma_sys_ent = t.lingma_sys_ent
+        WHERE t.lingma_sys_ent = 'NewApp'
+          AND t.tblname = #{tableName}
+          AND (
+                #{dbName} IS NULL
+             OR #{dbName} = ''
+             OR d.Name = #{dbName}
+             OR d.NameStr = #{dbName}
+             OR d.ValueName = #{dbName}
+             OR #{dbName} = DATABASE()
+          )
+        ORDER BY t.rowid
+        LIMIT 1
+    </select>
+
+    <select id="findFieldNames" resultType="java.lang.String">
+        SELECT DISTINCT f.enname
+        FROM base_tblfield f
+        WHERE f.lingma_sys_ent = 'NewApp'
+          AND f.enname IS NOT NULL
+          AND f.enname != ''
+          AND (
+                (#{tableId} IS NOT NULL AND #{tableId} != '' AND BINARY f.tblid = BINARY #{tableId})
+             OR BINARY f.tblname = BINARY #{tableName}
+          )
+        ORDER BY f.enname
+    </select>
+
+    <select id="countLogicalPrimaryKeys" resultType="java.lang.Integer">
+        SELECT COUNT(1)
+        FROM base_tblfield f
+        WHERE f.lingma_sys_ent = 'NewApp'
+          AND IFNULL(f.IsPKey, 0) != 0
+          AND (
+                (#{tableId} IS NOT NULL AND #{tableId} != '' AND BINARY f.tblid = BINARY #{tableId})
+             OR BINARY f.tblname = BINARY #{tableName}
+          )
+    </select>
+
+    <select id="countPhysicalPrimaryKeys" resultType="java.lang.Integer">
+        SELECT COUNT(1)
+        FROM information_schema.columns
+        WHERE table_schema = #{dbName}
+          AND table_name = #{tableName}
+          AND column_key = 'PRI'
+    </select>
+
+    <update id="addColumn">
+        ALTER TABLE ${tableName} ADD COLUMN ${columnSql}
+    </update>
+
+    <insert id="insertFieldMeta">
+        INSERT INTO base_tblfield (
+            rowid, tblid, tblname, enname, cnname,
+            DataType, DataLen, IsPKey, ordIdx,
+            lingma_sys_is_delete, createuser, createtime,
+            updateuser, updatetime, lingma_sys_ent, status
+        ) VALUES (
+            #{rowid}, #{tblid}, #{tblname}, #{enname}, #{cnname},
+            #{dataType}, #{dataLen}, #{isPKey}, #{ordIdx},
+            0, 'LOCAL_SQL', NOW(),
+            'LOCAL_SQL', NOW(), #{lingmaSysEnt}, '0'
+        )
+    </insert>
+
+    <update id="markHasDefaultFields">
+        UPDATE _base_tbllist
+        SET hasDefaultFields = 1,
+            updateuser = 'LOCAL_SQL',
+            updatetime = NOW()
+        WHERE rowid = #{tableId}
+    </update>
+</mapper>

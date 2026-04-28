@@ -5,12 +5,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 @Data
-public class BatchCrudRequestItem {
+public class SystemFieldApplyRequest {
     @JsonProperty("TableName")
     @JsonAlias({"tableName"})
     private String tableName;
-
-    @JsonProperty("CrudModel")
-    @JsonAlias({"crudModel"})
-    private CrudModelDto crudModel;
 }

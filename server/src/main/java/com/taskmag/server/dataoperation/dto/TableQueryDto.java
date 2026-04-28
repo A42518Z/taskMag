@@ -1,11 +1,24 @@
 package com.taskmag.server.dataoperation.dto;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 @Data
 public class TableQueryDto {
-    private String Name;
-    private String DbName;
-    private String PrimaryKeyFields;
-    private FilterNodeDto Filter;
+    @JsonProperty("Name")
+    @JsonAlias({"name"})
+    private String name;
+
+    @JsonProperty("DbName")
+    @JsonAlias({"dbName"})
+    private String dbName;
+
+    @JsonProperty("PrimaryKeyFields")
+    @JsonAlias({"primaryKeyFields"})
+    private String primaryKeyFields;
+
+    @JsonProperty("Filter")
+    @JsonAlias({"filter"})
+    private FilterNodeDto filter;
 }

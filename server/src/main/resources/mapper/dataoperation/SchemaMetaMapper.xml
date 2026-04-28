@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.taskmag.server.dataoperation.mapper.SchemaMetaMapper">
+
+    <select id="currentDatabase" resultType="java.lang.String">
+        SELECT DATABASE()
+    </select>
+
+    <select id="listTables" resultType="com.taskmag.server.dataoperation.dto.TableEntryDto">
+        SELECT DISTINCT
+               t.tblname AS tableName,
+               'BASE TABLE' AS tableType
+        FROM _base_tbllist t
+        LEFT JOIN _base_dbinfo d
+          ON d.Id = t.dbid
+         AND d.lingma_sys_ent = t.lingma_sys_ent
+        WHERE t.lingma_sys_ent = 'NewApp'
+          AND t.tblname IS NOT NULL
+          AND t.tblname != ''
+          AND (
+                #{dbName} IS NULL
+             OR #{dbName} = ''
+             OR d.Name = #{dbName}
+             OR d.NameStr = #{dbName}
+             OR d.ValueName = #{dbName}
+             OR #{dbName} = DATABASE()
+          )
+        ORDER BY t.tblname
+    </select>
+
+    <select id="listColumns" resultType="com.taskmag.server.dataoperation.dto.ColumnMetaDto">
+        SELECT
+            f.enname AS columnName,
+            CASE WHEN MAX(CASE WHEN IFNULL(f.IsPKey, 0) != 0 THEN 1 ELSE 0 END) = 1 THEN 'PRI' ELSE '' END AS columnKey
+        FROM base_tblfield f
+        LEFT JOIN _base_tbllist t
+          ON t.lingma_sys_ent = f.lingma_sys_ent
+         AND (
+                BINARY t.rowid = BINARY f.tblid
+             OR BINARY t.tblname = BINARY f.tblname
+         )
+        LEFT JOIN _base_dbinfo d
+          ON d.Id = t.dbid
+         AND d.lingma_sys_ent = t.lingma_sys_ent
+        WHERE f.lingma_sys_ent = 'NewApp'
+          AND f.tblname = #{tableName}
+          AND f.enname IS NOT NULL
+          AND f.enname != ''
+          AND (
+                #{dbName} IS NULL
+             OR #{dbName} = ''
+             OR d.Name = #{dbName}
+             OR d.NameStr = #{dbName}
+             OR d.ValueName = #{dbName}
+             OR #{dbName} = DATABASE()
+             OR t.rowid IS NULL
+          )
+        GROUP BY f.enname
+        ORDER BY f.enname
+    </select>
+</mapper>

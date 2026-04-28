@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,7 @@ public class DataCrudService {
         }
         for (Map<String, Object> row : rows) {
             Map<String, Object> data = filterWritableFields(meta, row);
+            applyInsertDefaults(meta, data);
             Object idValue = row.get(meta.getRequestPrimaryKey());
             if (idValue == null || String.valueOf(idValue).isBlank()) {
                 data.put(meta.getPrimaryKeyColumn(), IdGenerator.uuid());
@@ -67,6 +69,7 @@ public class DataCrudService {
                 throw new BizException(4004, "primary key is required for update: " + meta.getRequestPrimaryKey());
             }
             Map<String, Object> data = filterWritableFields(meta, row);
+            applyUpdateDefaults(meta, data);
             if (data.isEmpty()) {
                 continue;
             }
@@ -88,6 +91,36 @@ public class DataCrudService {
             }
             dynamicCrudMapper.deleteById(meta.getPhysicalTableName(), meta.getPrimaryKeyColumn(), idValue);
         }
+    }
+
+    private void applyInsertDefaults(TableMeta meta, Map<String, Object> data) {
+        String currentUser = currentUser();
+        LocalDateTime now = LocalDateTime.now();
+        putIfFieldExists(meta, data, "createuser", currentUser);
+        putIfFieldExists(meta, data, "createtime", now);
+        putIfFieldExists(meta, data, "description", "");
+        putIfFieldExists(meta, data, "lingma_sys_is_delete", 0);
+        putIfFieldExists(meta, data, "updateuser", currentUser);
+        putIfFieldExists(meta, data, "updatetime", now);
+    }
+
+    private void applyUpdateDefaults(TableMeta meta, Map<String, Object> data) {
+        String currentUser = currentUser();
+        LocalDateTime now = LocalDateTime.now();
+        putIfFieldExists(meta, data, "updateuser", currentUser);
+        putIfFieldExists(meta, data, "updatetime", now);
+    }
+
+    private void putIfFieldExists(TableMeta meta, Map<String, Object> data, String fieldName, Object value) {
+        FieldMeta fieldMeta = meta.getField(fieldName);
+        if (fieldMeta == null) {
+            return;
+        }
+        data.putIfAbsent(fieldMeta.getColumnName(), value);
+    }
+
+    private String currentUser() {
+        return "system";
     }
 
     private Map<String, Object> filterWritableFields(TableMeta meta, Map<String, Object> row) {

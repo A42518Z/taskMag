@@ -1,55 +1,153 @@
 package com.taskmag.server.dataoperation.meta;
 
 import com.taskmag.server.common.exception.BizException;
-import jakarta.annotation.PostConstruct;
+import com.taskmag.server.dataoperation.dto.ColumnMetaDto;
+import com.taskmag.server.dataoperation.dto.TableEntryDto;
+import com.taskmag.server.dataoperation.mapper.SchemaMetaMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Component
+@RequiredArgsConstructor
 public class TableMetaRegistry {
-    private final Map<String, TableMeta> registry = new LinkedHashMap<>();
-
-    @PostConstruct
-    public void init() {
-        Map<String, FieldMeta> userFields = new LinkedHashMap<>();
-        userFields.put("ID", FieldMeta.builder().requestField("ID").columnName("id").queryable(true).writable(false).build());
-        userFields.put("UserName", FieldMeta.builder().requestField("UserName").columnName("user_name").queryable(true).writable(true).build());
-        userFields.put("LoginName", FieldMeta.builder().requestField("LoginName").columnName("login_name").queryable(true).writable(true).build());
-        userFields.put("State", FieldMeta.builder().requestField("State").columnName("state").queryable(true).writable(true).build());
-        userFields.put("Phone", FieldMeta.builder().requestField("Phone").columnName("phone").queryable(true).writable(true).build());
-        userFields.put("CreateTime", FieldMeta.builder().requestField("CreateTime").columnName("create_time").queryable(true).writable(false).build());
-
-        TableMeta userMeta = TableMeta.builder()
-                .dbName("QYVirtualPlat")
-                .logicalTableName("Base_UserInfo")
-                .physicalTableName("base_user_info")
-                .requestPrimaryKey("ID")
-                .primaryKeyColumn("id")
-                .allowDelete(true)
-                .fieldMetaMap(userFields)
-                .build();
-        registry.put(buildKey(userMeta.getDbName(), userMeta.getLogicalTableName()), userMeta);
-    }
+    private final SchemaMetaMapper schemaMetaMapper;
+    private final Map<String, TableMeta> registry = new ConcurrentHashMap<>();
 
     public TableMeta getTableMeta(String dbName, String logicalTableName) {
-        TableMeta meta = registry.get(buildKey(dbName, logicalTableName));
-        if (meta == null) {
-            throw new BizException(4001, "table not allowed: " + dbName + "@" + logicalTableName);
-        }
-        return meta;
+        ResolvedTable resolved = resolve(dbName, logicalTableName);
+        String key = buildKey(resolved.dbName(), resolved.tableName());
+        return registry.computeIfAbsent(key, k -> loadTableMeta(resolved.dbName(), resolved.tableName()));
     }
 
     public TableMeta getByCompositeName(String compositeName) {
-        String[] arr = compositeName.split("@");
-        if (arr.length != 2) {
-            throw new BizException(4001, "table name invalid: " + compositeName);
+        ResolvedTable resolved = resolve(null, compositeName);
+        return getTableMeta(resolved.dbName(), resolved.tableName());
+    }
+
+    public String resolveDbName(String dbName) {
+        if (StringUtils.hasText(dbName)) {
+            return sanitizeIdentifier(dbName.trim(), "dbName");
         }
-        return getTableMeta(arr[0], arr[1]);
+        String currentDb = schemaMetaMapper.currentDatabase();
+        if (!StringUtils.hasText(currentDb)) {
+            throw new BizException(4001, "current database is empty");
+        }
+        return sanitizeIdentifier(currentDb.trim(), "dbName");
+    }
+
+    public List<TableEntryDto> listTables(String dbName) {
+        String resolvedDbName = resolveDbName(dbName);
+        return schemaMetaMapper.listTables(resolvedDbName);
+    }
+
+    private TableMeta loadTableMeta(String dbName, String logicalTableName) {
+        List<ColumnMetaDto> columns = schemaMetaMapper.listColumns(dbName, logicalTableName);
+        if (columns == null || columns.isEmpty()) {
+            throw new BizException(4001, "table not found in metadata: " + dbName + "@" + logicalTableName);
+        }
+
+        Map<String, FieldMeta> fieldMetaMap = new LinkedHashMap<>();
+        String requestPrimaryKey = null;
+        String primaryKeyColumn = null;
+
+        for (ColumnMetaDto column : columns) {
+            String columnName = sanitizeIdentifier(column.getColumnName(), "columnName");
+            boolean isPrimaryKey = "PRI".equalsIgnoreCase(column.getColumnKey());
+            if (isPrimaryKey && primaryKeyColumn == null) {
+                primaryKeyColumn = columnName;
+                requestPrimaryKey = columnName;
+            }
+            fieldMetaMap.put(columnName, FieldMeta.builder()
+                    .requestField(columnName)
+                    .columnName(columnName)
+                    .queryable(true)
+                    .writable(!isPrimaryKey)
+                    .build());
+        }
+
+        if (fieldMetaMap.isEmpty()) {
+            throw new BizException(4001, "table has no available fields in metadata: " + dbName + "@" + logicalTableName);
+        }
+
+        if (primaryKeyColumn == null) {
+            if (fieldMetaMap.containsKey("id")) {
+                primaryKeyColumn = "id";
+                requestPrimaryKey = "id";
+            } else if (fieldMetaMap.containsKey("rowid")) {
+                primaryKeyColumn = "rowid";
+                requestPrimaryKey = "rowid";
+            } else {
+                String firstColumn = fieldMetaMap.keySet().iterator().next();
+                primaryKeyColumn = firstColumn;
+                requestPrimaryKey = firstColumn;
+            }
+        }
+
+        String physicalDbName = resolvePhysicalDbName();
+        return TableMeta.builder()
+                .dbName(dbName)
+                .logicalTableName(logicalTableName)
+                .physicalTableName("`" + physicalDbName + "`.`" + logicalTableName + "`")
+                .requestPrimaryKey(requestPrimaryKey)
+                .primaryKeyColumn(primaryKeyColumn)
+                .allowDelete(true)
+                .fieldMetaMap(fieldMetaMap)
+                .build();
+    }
+
+    private String resolvePhysicalDbName() {
+        String currentDb = schemaMetaMapper.currentDatabase();
+        if (!StringUtils.hasText(currentDb)) {
+            throw new BizException(4001, "current database is empty");
+        }
+        return sanitizeIdentifier(currentDb.trim(), "physicalDbName");
+    }
+
+    private ResolvedTable resolve(String dbName, String logicalTableName) {
+        String rawTableName = logicalTableName == null ? "" : logicalTableName.trim();
+        String rawDbName = dbName == null ? "" : dbName.trim();
+
+        if (rawTableName.contains("@")) {
+            String[] arr = rawTableName.split("@", 2);
+            if (!StringUtils.hasText(arr[0]) || !StringUtils.hasText(arr[1])) {
+                throw new BizException(4001, "table name invalid: " + rawTableName);
+            }
+            rawDbName = arr[0].trim();
+            rawTableName = arr[1].trim();
+        }
+
+        if (!StringUtils.hasText(rawTableName)) {
+            throw new BizException(4001, "table name is required");
+        }
+
+        String resolvedDbName = resolveDbName(rawDbName);
+        String resolvedTableName = sanitizeIdentifier(rawTableName, "tableName");
+        return new ResolvedTable(resolvedDbName, resolvedTableName);
     }
 
     private String buildKey(String dbName, String logicalTableName) {
         return dbName + "@" + logicalTableName;
+    }
+
+    private String sanitizeIdentifier(String name, String fieldName) {
+        if (!StringUtils.hasText(name)) {
+            throw new BizException(4001, fieldName + " is required");
+        }
+        String trimmed = name.trim();
+        for (char c : trimmed.toCharArray()) {
+            if (!(Character.isLetterOrDigit(c) || c == '_' || c == '$')) {
+                throw new BizException(4001, fieldName + " contains illegal characters: " + name);
+            }
+        }
+        return trimmed;
+    }
+
+    private record ResolvedTable(String dbName, String tableName) {
     }
 }
